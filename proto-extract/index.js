@@ -499,7 +499,18 @@ async function findAppModules() {
   const decodedProto = Object.keys(decodedProtoMap).sort();
   const sortedStr = decodedProto.map((d) => decodedProtoMap[d]).join('\n');
 
-  const decodedProtoStr = `syntax = "proto3";\npackage proto;\n\n/// WhatsApp Version: ${whatsAppVersion}\n\n${sortedStr}`;
+  // WhatsApp's bundle can emit proto2-style `required` labels, which protobufjs
+  // refuses to parse while the file declares `syntax = "proto3"` (it throws
+  // "illegal token 'required'"). WhatsApp has no idea this breaks the extractor,
+  // so normalise it here: a singular proto3 field is wire-compatible with a
+  // proto2 `required` field, so the downgrade is behaviour-preserving.
+  const normalizedStr = sortedStr.replace(/^(\s*)required\s+(?=[A-Za-z])/gm, '$1optional ');
+  const downgraded = sortedStr.length - normalizedStr.length === 0 ? 0 : (sortedStr.match(/^(\s*)required\s+(?=[A-Za-z])/gm) || []).length;
+  if (downgraded > 0) {
+    console.log(`Normalised ${downgraded} proto2 'required' field(s) to 'optional'`);
+  }
+
+  const decodedProtoStr = `syntax = "proto3";\npackage proto;\n\n/// WhatsApp Version: ${whatsAppVersion}\n\n${normalizedStr}`;
   const destinationPath = '../WAProto/WAProto.proto';
   await fs.writeFile(destinationPath, decodedProtoStr);
 

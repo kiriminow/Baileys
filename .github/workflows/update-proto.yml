@@ -1,5 +1,17 @@
 name: Update WAProto
 
+# Fork of WhiskeySockets/Baileys for kiriminow.
+#
+# Upstream opens a pull request and waits for a human; master there has been
+# frozen since 2026-08-04, so the PRs pile up and the proto goes stale. This
+# fork instead publishes the regenerated proto to a stable branch (`kirimi/auto`)
+# which kirimi-engine-node pins, and notifies Telegram so a human still decides
+# when to actually ship it.
+#
+# This replaces upstream's separate update-version.yml: the bundle version that
+# proto-extract prints IS the version the extracted proto belongs to, so one job
+# keeps the schema and the three version constants consistent. Two jobs would
+# also fight over the same branch.
 on:
   schedule:
     - cron: '10 1 * * *'
@@ -7,18 +19,22 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
+
+env:
+  AUTO_BRANCH: kirimi/auto
 
 jobs:
   update-proto:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          ref: master
 
-      - name: Install Node
-        uses: actions/setup-node@v3
+      - name: Setup Node and Corepack
+        uses: actions/setup-node@v4
         with:
           node-version: 20.x
 
@@ -32,33 +48,68 @@ jobs:
           yarn install --immutable
           yarn --cwd proto-extract install --immutable
 
-      - name: Update WAProto.proto
+      - name: Extract WAProto.proto from the live bundle
         id: wa_proto_info
         run: |
-          yarn --cwd proto-extract start > wa-logs.txt
-          WA_VERSION=$(cat wa-logs.txt | perl -n -e'/Current version\: (.+)/ && print $1')
-          WA_JS_URL=$(cat wa-logs.txt | perl -n -e'/Found source JS URL\: (.+)/ && print $1')
+          set -o pipefail
+          yarn --cwd proto-extract start | tee wa-logs.txt
+          WA_VERSION=$(perl -n -e'/Current version\: (.+)/ && print $1' wa-logs.txt)
+          WA_JS_URL=$(perl -n -e'/Found source JS URL\: (.+)/ && print $1' wa-logs.txt)
+          if [ -z "$WA_VERSION" ]; then
+            echo "Could not determine the WhatsApp version — extractor output changed." >&2
+            exit 1
+          fi
           echo "wa_version=$WA_VERSION" >> $GITHUB_OUTPUT
           echo "wa_js_url=$WA_JS_URL" >> $GITHUB_OUTPUT
 
       - name: GenerateStatics
         run: yarn gen:protobuf
 
-      - name: Update baileys-version.json
+      - name: Update version constants
         run: |
-          WA_VERSION="${{steps.wa_proto_info.outputs.wa_version}}"
-          WA_NUMBERS=$(echo $WA_VERSION | sed "s/\./, /g")
-          echo -e "{\n\t\"version\": [$WA_NUMBERS]\n}" > src/Defaults/baileys-version.json
+          WA_VERSION="${{ steps.wa_proto_info.outputs.wa_version }}"
+          MAJOR=$(echo "$WA_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$WA_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$WA_VERSION" | cut -d. -f3)
+          printf '{"version": [%s, %s, %s]}\n' "$MAJOR" "$MINOR" "$PATCH" > src/Defaults/baileys-version.json
+          sed -i -E "s/const version = \[[0-9]+, [0-9]+, [0-9]+\]/const version = [$MAJOR, $MINOR, $PATCH]/" src/Defaults/index.ts
+          sed -i -E "s/const baileysVersion = \[[0-9]+, [0-9]+, [0-9]+\]/const baileysVersion = [$MAJOR, $MINOR, $PATCH]/" src/Utils/generics.ts
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
-        with:
-          commit-message: 'chore: updated proto/version to v${{steps.wa_proto_info.outputs.wa_version}}'
-          title: 'Whatsapp v${{steps.wa_proto_info.outputs.wa_version}} proto/version change'
-          branch: 'update-proto/stable'
-          delete-branch: true
-          labels: 'update-proto'
-          body: "Automated changes\nFound source JS URL: ${{steps.wa_proto_info.outputs.wa_js_url}}\nCurrent version: v${{steps.wa_proto_info.outputs.wa_version}}"
-          add-paths: |
-            WAProto/*
-            src/Defaults/baileys-version.json
+      - name: Verify the regenerated proto actually builds
+        # A regenerated proto that cannot be compiled must never reach the auto
+        # branch: kirimi-engine-node builds from it.
+        run: yarn build
+
+      - name: Publish to the auto branch
+        id: publish
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "Proto already up to date for v${{ steps.wa_proto_info.outputs.wa_version }}"
+            exit 0
+          fi
+
+          echo "changed=true" >> $GITHUB_OUTPUT
+          git checkout -B "$AUTO_BRANCH"
+          git add WAProto src/Defaults/baileys-version.json src/Defaults/index.ts src/Utils/generics.ts
+          git commit -m "chore: update proto/version to v${{ steps.wa_proto_info.outputs.wa_version }}"
+          git push --force origin "$AUTO_BRANCH"
+          echo "Published $AUTO_BRANCH at v${{ steps.wa_proto_info.outputs.wa_version }}"
+
+      - name: Notify Telegram
+        if: steps.publish.outputs.changed == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          TEXT=$'🔄 kiriminow/Baileys\nProto + versi WA diperbarui.\nVersi    : ${{ steps.wa_proto_info.outputs.wa_version }}\nBranch   : kirimi/auto\n\nUji & pakai:\ncd kirimi-engine-node && ./update-baileys.sh --repo kiriminow/Baileys --branch kirimi/auto'
+          curl -sS -o /dev/null -w "%{http_code}\n" \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true"

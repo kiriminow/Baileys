@@ -16808,4 +16808,42 @@ export namespace proto {
         public toJSON(): { [k: string]: any };
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
+
+    interface ILIDMigrationMapping {
+        pn?: (number|Long|null);
+        assignedLid?: (number|Long|null);
+        latestLid?: (number|Long|null);
+    }
+
+    class LIDMigrationMapping implements ILIDMigrationMapping {
+        constructor(p?: proto.ILIDMigrationMapping);
+        public pn: (number|Long);
+        public assignedLid: (number|Long);
+        public latestLid?: (number|Long|null);
+        public static create(properties?: proto.ILIDMigrationMapping): proto.LIDMigrationMapping;
+        public static encode(m: proto.ILIDMigrationMapping, w?: $protobuf.Writer): $protobuf.Writer;
+        public static decode(r: ($protobuf.Reader|Uint8Array), l?: number): proto.LIDMigrationMapping;
+        public static fromObject(d: { [k: string]: any }): proto.LIDMigrationMapping;
+        public static toObject(m: proto.LIDMigrationMapping, o?: $protobuf.IConversionOptions): { [k: string]: any };
+        public toJSON(): { [k: string]: any };
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    interface ILIDMigrationMappingSyncPayload {
+        pnToLidMappings?: (proto.ILIDMigrationMapping[]|null);
+        chatDbMigrationTimestamp?: (number|Long|null);
+    }
+
+    class LIDMigrationMappingSyncPayload implements ILIDMigrationMappingSyncPayload {
+        constructor(p?: proto.ILIDMigrationMappingSyncPayload);
+        public pnToLidMappings: proto.ILIDMigrationMapping[];
+        public chatDbMigrationTimestamp?: (number|Long|null);
+        public static create(properties?: proto.ILIDMigrationMappingSyncPayload): proto.LIDMigrationMappingSyncPayload;
+        public static encode(m: proto.ILIDMigrationMappingSyncPayload, w?: $protobuf.Writer): $protobuf.Writer;
+        public static decode(r: ($protobuf.Reader|Uint8Array), l?: number): proto.LIDMigrationMappingSyncPayload;
+        public static fromObject(d: { [k: string]: any }): proto.LIDMigrationMappingSyncPayload;
+        public static toObject(m: proto.LIDMigrationMappingSyncPayload, o?: $protobuf.IConversionOptions): { [k: string]: any };
+        public toJSON(): { [k: string]: any };
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
 }

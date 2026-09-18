@@ -6630,3 +6630,15 @@ message WebNotificationsInfo {
     optional uint32 notifyMessageCount = 4;
     repeated WebMessageInfo notifyMessages = 5;
 }
+
+
+message LIDMigrationMapping {
+    uint64 pn = 1;
+    uint64 assignedLid = 2;
+    optional uint64 latestLid = 3;
+}
+
+message LIDMigrationMappingSyncPayload {
+    repeated LIDMigrationMapping pnToLidMappings = 1;
+    optional uint64 chatDbMigrationTimestamp = 2;
+}

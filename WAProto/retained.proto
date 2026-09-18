@@ -1,0 +1,35 @@
+// Message definitions that must survive proto regeneration even though WhatsApp
+// no longer references them from its JS bundle.
+//
+// WHY THIS FILE EXISTS
+//
+// proto-extract walks WhatsApp's bundle and emits only the message definitions
+// it finds there. WhatsApp drops a definition from the bundle once its own
+// client stops sending it — but *receivers* must keep parsing those messages for
+// compatibility, and the wire format does not change just because the sender
+// moved on.
+//
+// Concretely: WhatsApp 2.3000.1047889493 no longer mentions
+// `LIDMigrationMapping` or `LIDMigrationMappingSyncPayload`, yet
+// src/Utils/process-message.ts still has to decode the bytes carried in
+// `ProtocolMessage.lidMigrationMappingSyncMessage.encodedMappingPayload`.
+// Regenerating without these two definitions made the build fail with
+// "Property 'LIDMigrationMappingSyncPayload' does not exist on type 'typeof proto'".
+//
+// ADDING TO THIS LIST
+//
+// Only add a definition here when the generated client genuinely must still
+// decode it. Copy the block verbatim from the last proto revision that contained
+// it (git log WAProto/WAProto.proto). The field numbers and types are the wire
+// contract and must never be altered.
+
+message LIDMigrationMapping {
+    uint64 pn = 1;
+    uint64 assignedLid = 2;
+    optional uint64 latestLid = 3;
+}
+
+message LIDMigrationMappingSyncPayload {
+    repeated LIDMigrationMapping pnToLidMappings = 1;
+    optional uint64 chatDbMigrationTimestamp = 2;
+}

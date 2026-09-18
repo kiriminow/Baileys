@@ -510,7 +510,29 @@ async function findAppModules() {
     console.log(`Normalised ${downgraded} proto2 'required' field(s) to 'optional'`);
   }
 
-  const decodedProtoStr = `syntax = "proto3";\npackage proto;\n\n/// WhatsApp Version: ${whatsAppVersion}\n\n${normalizedStr}`;
+  // Definitions WhatsApp dropped from its bundle but which we must still decode
+  // are kept in WAProto/retained.proto and appended verbatim. Without this, a
+  // regeneration silently removes types the client still has to parse.
+  const retainedPath = '../WAProto/retained.proto';
+  let retainedStr = '';
+  try {
+    const raw = await fs.readFile(retainedPath, 'utf8');
+    // Strip the file's own comments and blank lines: this is a schema fragment,
+    // and the generated proto already carries its own version header.
+    retainedStr = raw
+      .split('\n')
+      .filter((line) => !/^\s*\/\//.test(line))
+      .join('\n')
+      .trim();
+    if (retainedStr) {
+      console.log(`Appending retained definitions from ${retainedPath}`);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+
+  const schemaBody = retainedStr ? `${normalizedStr}\n\n${retainedStr}\n` : normalizedStr;
+  const decodedProtoStr = `syntax = "proto3";\npackage proto;\n\n/// WhatsApp Version: ${whatsAppVersion}\n\n${schemaBody}`;
   const destinationPath = '../WAProto/WAProto.proto';
   await fs.writeFile(destinationPath, decodedProtoStr);
 
